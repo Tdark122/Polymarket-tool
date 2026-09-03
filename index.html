@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SCANLINE — Futures Signal Scanner</title>
+<style>
+  @font-face {
+    font-family: 'JetBrains Mono';
+    src: local('JetBrains Mono');
+  }
+
+  :root{
+    --bg: #0A0E12;
+    --panel: #10161C;
+    --panel-2: #131A21;
+    --border: #1E2833;
+    --border-soft: #17202A;
+    --text: #E8ECEF;
+    --text-dim: #7C8A96;
+    --text-faint: #4A5661;
+    --bull: #3FB68B;
+    --bull-dim: #2A7A5D;
+    --bear: #E5533D;
+    --bear-dim: #A13D2D;
+    --amber: #D9A441;
+    --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    --sans: -apple-system, 'Inter', 'Segoe UI', Helvetica, Arial, sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+  }
+
+  body {
+    padding: 20px 16px 60px;
+    max-width: 720px;
+    margin: 0 auto;
+  }
+
+  ::selection { background: var(--amber); color: #0A0E12; }
+
+  /* ---------- Header ---------- */
+  .masthead {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 18px;
+  }
+  .masthead-title {
+    font-family: var(--mono);
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+  }
+  .masthead-title .dot {
+    display: inline-block;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--bull);
+    margin-right: 8px;
+    box-shadow: 0 0 6px var(--bull);
+    position: relative;
+    top: -1px;
+  }
+  .masthead-title .dot.off { background: var(--text-faint); box-shadow: none; }
+  .masthead-sub {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--text-faint);
+  }
+
+  /* ---------- Controls ---------- */
+  .controls {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 18px;
+  }
+  select {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 11px 12px;
+    flex: 1;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, var(--text-dim) 50%), linear-gradient(135deg, var(--text-dim) 50%, transparent 50%);
+    background-position: calc(100% - 16px) center, calc(100% - 11px) center;
+    background-size: 5px 5px, 5px 5px;
+    background-repeat: no-repeat;
+  }
+  select:focus { outline: 1px solid var(--amber); outline-offset: -1px; }
+
+  button.scan {
+    background: var(--amber);
+    color: #0A0E12;
+    border: none;
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.03em;
+    padding: 11px 22px;
+    cursor: pointer;
+    transition: opacity 0.12s ease;
+  }
+  button.scan:hover { opacity: 0.85; }
+  button.scan:active { opacity: 0.7; }
+  button.scan:disabled { background: var(--border); color: var(--text-faint); cursor: wait; }
+  button.scan:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+
+  /* ---------- Price strip ---------- */
+  .price-strip {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    padding: 16px 0 18px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 18px;
+  }
+  .price-main { font-family: var(--mono); }
+  .price-value { font-size: 32px; font-weight: 700; line-height: 1; letter-spacing: -0.01em; }
+  .price-pair { font-size: 11px; color: var(--text-dim); margin-top: 6px; letter-spacing: 0.02em; }
+  .price-chg { font-family: var(--mono); font-size: 14px; text-align: right; }
+  .price-chg .pct { font-weight: 700; }
+  .price-chg.up .pct { color: var(--bull); }
+  .price-chg.down .pct { color: var(--bear); }
+  .price-chg .lbl { display:block; font-size: 10px; color: var(--text-faint); margin-top: 4px; }
+
+  /* ---------- Empty state ---------- */
+  .empty {
+    padding: 60px 10px;
+    text-align: center;
+    color: var(--text-faint);
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.9;
+  }
+  .empty .big { font-size: 13px; color: var(--text-dim); margin-bottom: 6px; }
+
+  /* ---------- Signal readout ---------- */
+  .signal-block {
+    border: 1px solid var(--border);
+    margin-bottom: 18px;
+    padding: 22px 18px;
+    position: relative;
+    overflow: hidden;
+  }
+  .signal-block.long { border-color: var(--bull-dim); background: linear-gradient(180deg, rgba(63,182,139,0.08), transparent 70%); }
+  .signal-block.short { border-color: var(--bear-dim); background: linear-gradient(180deg, rgba(229,83,61,0.08), transparent 70%); }
+  .signal-block.neutral { border-color: var(--border); }
+
+  .signal-row { display: flex; justify-content: space-between; align-items: center; }
+  .signal-name {
+    font-family: var(--mono);
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+  }
+  .signal-name.long { color: var(--bull); }
+  .signal-name.short { color: var(--bear); }
+  .signal-name.neutral { color: var(--amber); }
+
+  .confidence-num { font-family: var(--mono); font-size: 26px; font-weight: 700; text-align: right; }
+  .confidence-lbl { font-family: var(--mono); font-size: 10px; color: var(--text-faint); text-align: right; margin-top: 2px; letter-spacing: 0.05em; }
+
+  .confidence-bar {
+    height: 3px;
+    background: var(--border);
+    margin-top: 16px;
+    position: relative;
+  }
+  .confidence-bar-fill {
+    height: 100%;
+    transition: width 0.5s cubic-bezier(.2,.8,.2,1);
+  }
+  .confidence-bar-fill.long { background: var(--bull); }
+  .confidence-bar-fill.short { background: var(--bear); }
+  .confidence-bar-fill.neutral { background: var(--amber); }
+
+  .signal-note {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 14px;
+    line-height: 1.6;
+  }
+
+  /* ---------- Indicator table ---------- */
+  .section-label {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--text-faint);
+    letter-spacing: 0.06em;
+    margin-bottom: 8px;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .indicators { border-top: 1px solid var(--border-soft); margin-bottom: 22px; }
+  .ind-row {
+    display: grid;
+    grid-template-columns: 20px 1fr auto auto;
+    gap: 12px;
+    align-items: center;
+    padding: 13px 2px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .ind-mark {
+    font-family: var(--mono);
+    font-size: 15px;
+    font-weight: 700;
+    text-align: center;
+  }
+  .ind-mark.yes { color: var(--bull); }
+  .ind-mark.no { color: var(--bear); }
+  .ind-body { min-width: 0; }
+  .ind-title { font-size: 13.5px; font-weight: 600; }
+  .ind-detail { font-family: var(--mono); font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+  .ind-value { font-family: var(--mono); font-size: 13px; text-align: right; white-space: nowrap; }
+  .ind-tag {
+    font-family: var(--mono);
+    font-size: 9.5px;
+    letter-spacing: 0.04em;
+    padding: 3px 6px;
+    text-align: center;
+    white-space: nowrap;
+  }
+  .ind-tag.bull { color: var(--bull); border: 1px solid var(--bull-dim); }
+  .ind-tag.bear { color: var(--bear); border: 1px solid var(--bear-dim); }
+
+  /* ---------- Stats footer ---------- */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    border: 1px solid var(--border-soft);
+    margin-bottom: 20px;
+  }
+  .stat {
+    padding: 12px 14px;
+    border-right: 1px solid var(--border-soft);
+  }
+  .stat:last-child { border-right: none; }
+  .stat-lbl { font-family: var(--mono); font-size: 9.5px; color: var(--text-faint); letter-spacing: 0.05em; margin-bottom: 5px; }
+  .stat-val { font-family: var(--mono); font-size: 14px; font-weight: 700; }
+
+  .disclaimer {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-faint);
+    line-height: 1.7;
+    padding-top: 14px;
+    border-top: 1px solid var(--border-soft);
+  }
+
+  .error-box {
+    border: 1px solid var(--bear-dim);
+    color: var(--bear);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 14px;
+    margin-bottom: 18px;
+    line-height: 1.6;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+
+  @media (max-width: 420px) {
+    .price-value { font-size: 26px; }
+    .signal-name { font-size: 21px; }
+    .confidence-num { font-size: 21px; }
+  }
+</style>
+</head>
+<body>
+
+  <div class="masthead">
+    <div>
+      <div class="masthead-title"><span class="dot off" id="statusDot"></span>SCANLINE</div>
+      <div class="masthead-sub">7-indicator confluence scanner · kraken public data</div>
+    </div>
+    <div class="masthead-sub" id="clock" style="text-align:right"></div>
+  </div>
+
+  <div class="controls">
+    <select id="pairSelect">
+      <option value="XBTUSD" data-ws="XBT/USD">BTC / USD</option>
+      <option value="ETHUSD" data-ws="ETH/USD">ETH / USD</option>
+      <option value="SOLUSD" data-ws="SOL/USD">SOL / USD</option>
+      <option value="XRPUSD" data-ws="XRP/USD">XRP / USD</option>
+      <option value="ADAUSD" data-ws="ADA/USD">ADA / USD</option>
+      <option value="DOGEUSD" data-ws="DOGE/USD">DOGE / USD</option>
+      <option value="LTCUSD" data-ws="LTC/USD">LTC / USD</option>
+      <option value="LINKUSD" data-ws="LINK/USD">LINK / USD</option>
+      <option value="AVAXUSD" data-ws="AVAX/USD">AVAX / USD</option>
+      <option value="MATICUSD" data-ws="MATIC/USD">MATIC / USD</option>
+    </select>
+    <select id="tfSelect">
+      <option value="15">15m</option>
+      <option value="60" selected>1H</option>
+      <option value="240">4H</option>
+      <option value="1440">1D</option>
+    </select>
+    <button class="scan" id="scanBtn">SCAN</button>
+  </div>
+
+  <div id="app">
+    <div class="empty">
+      <div class="big">no scan run yet</div>
+      pick a pair and timeframe, then hit scan.<br>
+      pulls live OHLC from kraken, runs 7 indicators, no login needed.
+    </div>
+  </div>
+
+  <div class="disclaimer">
+    data via kraken public API. indicators computed client-side from OHLC candles — not financial advice, not a trading signal guarantee. futures/leveraged trading carries high risk of loss. do your own research.
+  </div>
+
+<script>
+(function(){
+  const pairSelect = document.getElementById('pairSelect');
+  const tfSelect = document.getElementById('tfSelect');
+  const scanBtn = document.getElementById('scanBtn');
+  const app = document.getElementById('app');
+  const statusDot = document.getElementById('statusDot');
+  const clockEl = document.getElementById('clock');
+
+  function tickClock(){
+    const d = new Date();
+    clockEl.textContent = d.toUTCString().slice(17,25) + ' UTC';
+  }
+  tickClock();
+  setInterval(tickClock, 1000);
+
+  // ---------- Indicator math ----------
+  function sma(arr, len){
+    const out = [];
+    for(let i=0;i<arr.length;i++){
+      if(i < len-1){ out.push(null); continue; }
+      let sum=0;
+      for(let j=i-len+1;j<=i;j++) sum += arr[j];
+      out.push(sum/len);
+    }
+    return out;
+  }
+
+  function ema(arr, len){
+    const out = [];
+    const k = 2/(len+1);
+    let prev = null;
+    for(let i=0;i<arr.length;i++){
+      if(arr[i]==null){ out.push(null); continue; }
+      if(prev==null){
+        // seed with SMA of first `len` values once we have enough
+        if(i >= len-1){
+          let sum=0;
+          for(let j=i-len+1;j<=i;j++) sum+=arr[j];
+          prev = sum/len;
+          out.push(prev);
+        } else {
+          out.push(null);
+        }
+      } else {
+        prev = arr[i]*k + prev*(1-k);
+        out.push(prev);
+      }
+    }
+    return out;
+  }
+
+  function rsi(closes, len){
+    const out = new Array(closes.length).fill(null);
+    if(closes.length < len+1) return out;
+    let gains=0, losses=0;
+    for(let i=1;i<=len;i++){
+      const diff = closes[i]-closes[i-1];
+      if(diff>=0) gains+=diff; else losses-=diff;
+    }
+    let avgGain = gains/len, avgLoss = losses/len;
+    out[len] = avgLoss===0 ? 100 : 100 - (100/(1+avgGain/avgLoss));
+    for(let i=len+1;i<closes.length;i++){
+      const diff = closes[i]-closes[i-1];
+      const gain = diff>0?diff:0;
+      const loss = diff<0?-diff:0;
+      avgGain = (avgGain*(len-1)+gain)/len;
+      avgLoss = (avgLoss*(len-1)+loss)/len;
+      out[i] = avgLoss===0 ? 100 : 100 - (100/(1+avgGain/avgLoss));
+    }
+    return out;
+  }
+
+  function macd(closes){
+    const ema12 = ema(closes,12);
+    const ema26 = ema(closes,26);
+    const macdLine = closes.map((_,i)=> (ema12[i]!=null && ema26[i]!=null) ? ema12[i]-ema26[i] : null);
+    const cleanMacd = macdLine.filter(v=>v!=null);
+    const signalRaw = ema(cleanMacd, 9);
+    // align signal back to full-length array
+    const signalLine = new Array(macdLine.length).fill(null);
+    let si=0;
+    for(let i=0;i<macdLine.length;i++){
+      if(macdLine[i]!=null){
+        signalLine[i] = signalRaw[si];
+        si++;
+      }
+    }
+    const hist = macdLine.map((v,i)=> (v!=null && signalLine[i]!=null) ? v-signalLine[i] : null);
+    return {macdLine, signalLine, hist};
+  }
+
+  function bollinger(closes, len, mult){
+    const mid = sma(closes, len);
+    const upper = new Array(closes.length).fill(null);
+    const lower = new Array(closes.length).fill(null);
+    for(let i=0;i<closes.length;i++){
+      if(mid[i]==null) continue;
+      let sumSq=0;
+      for(let j=i-len+1;j<=i;j++) sumSq += Math.pow(closes[j]-mid[i],2);
+      const sd = Math.sqrt(sumSq/len);
+      upper[i] = mid[i] + mult*sd;
+      lower[i] = mid[i] - mult*sd;
+    }
+    return {mid, upper, lower};
+  }
+
+  function stochRsi(closes, len){
+    const r = rsi(closes, len);
+    const out = new Array(closes.length).fill(null);
+    for(let i=0;i<closes.length;i++){
+      if(i < len*2-1) continue;
+      let slice = r.slice(i-len+1, i+1).filter(v=>v!=null);
+      if(slice.length < len) continue;
+      const minR = Math.min(...slice);
+      const maxR = Math.max(...slice);
+      out[i] = maxR===minR ? 50 : ((r[i]-minR)/(maxR-minR))*100;
+    }
+    return out;
+  }
+
+  function adx(highs, lows, closes, len){
+    const n = closes.length;
+    const plusDM = new Array(n).fill(0);
+    const minusDM = new Array(n).fill(0);
+    const tr = new Array(n).fill(0);
+    for(let i=1;i<n;i++){
+      const upMove = highs[i]-highs[i-1];
+      const downMove = lows[i-1]-lows[i];
+      plusDM[i] = (upMove>downMove && upMove>0) ? upMove : 0;
+      minusDM[i] = (downMove>upMove && downMove>0) ? downMove : 0;
+      tr[i] = Math.max(highs[i]-lows[i], Math.abs(highs[i]-closes[i-1]), Math.abs(lows[i]-closes[i-1]));
+    }
+    function wilderSmooth(arr, len){
+      const out = new Array(arr.length).fill(null);
+      let sum=0;
+      for(let i=1;i<=len;i++) sum+=arr[i];
+      out[len]=sum;
+      for(let i=len+1;i<arr.length;i++){
+        out[i] = out[i-1] - (out[i-1]/len) + arr[i];
+      }
+      return out;
+    }
+    const trS = wilderSmooth(tr,len);
+    const pDMS = wilderSmooth(plusDM,len);
+    const mDMS = wilderSmooth(minusDM,len);
+    const pDI = trS.map((v,i)=> v?  (pDMS[i]/v)*100 : null);
+    const mDI = trS.map((v,i)=> v ? (mDMS[i]/v)*100 : null);
+    const dx = pDI.map((v,i)=> (v!=null && mDI[i]!=null && (v+mDI[i])!==0) ? Math.abs(v-mDI[i])/(v+mDI[i])*100 : null);
+    const dxClean = dx.filter(v=>v!=null);
+    const adxRaw = sma(dxClean, len);
+    const adxOut = new Array(n).fill(null);
+    let di=0;
+    for(let i=0;i<n;i++){
+      if(dx[i]!=null){ adxOut[i] = adxRaw[di]; di++; }
+    }
+    return {adx: adxOut, plusDI: pDI, minusDI: mDI};
+  }
+
+  function volumeTrend(volumes, len){
+    const avg = sma(volumes, len);
+    return avg;
+  }
+
+  // ---------- Kraken fetch ----------
+  async function fetchOHLC(pair, interval){
+    const url = `https://api.kraken.com/0/public/OHLC?pair=${pair}&interval=${interval}`;
+    const res = await fetch(url);
+    if(!res.ok) throw new Error('Network error contacting Kraken');
+    const json = await res.json();
+    if(json.error && json.error.length) throw new Error(json.error.join('; '));
+    const key = Object.keys(json.result).find(k=>k!=='last');
+    const rows = json.result[key];
+    if(!rows || rows.length < 40) throw new Error('Not enough candle history returned');
+    return rows.map(r=>({
+      time: r[0]*1000,
+      open: parseFloat(r[1]),
+      high: parseFloat(r[2]),
+      low: parseFloat(r[3]),
+      close: parseFloat(r[4]),
+      vwap: parseFloat(r[5]),
+      volume: parseFloat(r[6]),
+    }));
+  }
+
+  async function fetchTicker(pair){
+    const url = `https://api.kraken.com/0/public/Ticker?pair=${pair}`;
+    const res = await fetch(url);
+    const json = await res.json();
+    if(json.error && json.error.length) throw new Error(json.error.join('; '));
+    const key = Object.keys(json.result)[0];
+    return json.result[key];
+  }
+
+  function fmtPrice(v){
+    if(v >= 1000) return v.toLocaleString('en-US',{maximumFractionDigits:2});
+    if(v >= 1) return v.toFixed(3);
+    return v.toFixed(5);
+  }
+
+  function last(arr){
+    for(let i=arr.length-1;i>=0;i--) if(arr[i]!=null) return arr[i];
+    return null;
+  }
+  function lastN(arr, n){
+    // returns array of last n non-null-trailing values ending at end
+    return arr.slice(arr.length-n);
+  }
+
+  // ---------- Run scan ----------
+  async function runScan(){
+    const pairOpt = pairSelect.options[pairSelect.selectedIndex];
+    const pair = pairOpt.value;
+    const wsName = pairOpt.dataset.ws;
+    const interval = tfSelect.value;
+    const tfLabel = tfSelect.options[tfSelect.selectedIndex].textContent;
+
+    scanBtn.disabled = true;
+    scanBtn.textContent = 'SCANNING…';
+    statusDot.classList.remove('off');
+    statusDot.style.background = 'var(--amber)';
+    statusDot.style.boxShadow = '0 0 6px var(--amber)';
+
+    try {
+      const [candles, ticker] = await Promise.all([
+        fetchOHLC(pair, interval),
+        fetchTicker(pair)
+      ]);
+
+      const closes = candles.map(c=>c.close);
+      const highs = candles.map(c=>c.high);
+      const lows = candles.map(c=>c.low);
+      const vols = candles.map(c=>c.volume);
+      const n = closes.length;
+      const price = closes[n-1];
+      const prevClose = closes[n-2];
+
+      // ---- Indicator 1: RSI(14) ----
+      const rsiArr = rsi(closes, 14);
+      const rsiVal = last(rsiArr);
+      const rsiBull = rsiVal < 35;
+      const rsiBear = rsiVal > 65;
+      const rsiAligned = rsiBull || rsiBear;
+      const rsiDir = rsiBull ? 'bull' : (rsiBear ? 'bear' : null);
+
+      // ---- Indicator 2: MACD ----
+      const macdData = macd(closes);
+      const macdHistNow = last(macdData.hist);
+      const histSeries = macdData.hist.filter(v=>v!=null);
+      const macdHistPrev = histSeries[histSeries.length-2];
+      const macdBull = macdHistNow > 0 && macdHistNow > macdHistPrev;
+      const macdBear = macdHistNow < 0 && macdHistNow < macdHistPrev;
+      const macdAligned = macdBull || macdBear;
+      const macdDir = macdBull ? 'bull' : (macdBear ? 'bear' : null);
+
+      // ---- Indicator 3: EMA 9/21 cross ----
+      const ema9 = ema(closes, 9);
+      const ema21 = ema(closes, 21);
+      const e9now = last(ema9), e21now = last(ema21);
+      const e9arr = ema9.filter(v=>v!=null);
+      const e21arr = ema21.filter(v=>v!=null);
+      const e9prev = e9arr[e9arr.length-2];
+      const e21prev = e21arr[e21arr.length-2];
+      const emaBullCross = e9prev <= e21prev && e9now > e21now;
+      const emaBearCross = e9prev >= e21prev && e9now < e21now;
+      const emaBullTrend = e9now > e21now;
+      const emaAligned = true; // always tells you something
+      const emaDir = emaBullTrend ? 'bull' : 'bear';
+      const emaCrossJustHappened = emaBullCross || emaBearCross;
+
+      // ---- Indicator 4: Bollinger Bands ----
+      const bb = bollinger(closes, 20, 2);
+      const bbUpper = last(bb.upper), bbLower = last(bb.lower), bbMid = last(bb.mid);
+      const bbBull = price <= bbLower;
+      const bbBear = price >= bbUpper;
+      const bbAligned = bbBull || bbBear;
+      const bbDir = bbBull ? 'bull' : (bbBear ? 'bear' : null);
+      const bbPctB = (price - bbLower) / (bbUpper - bbLower) * 100;
+
+      // ---- Indicator 5: Stochastic RSI ----
+      const stoch = stochRsi(closes, 14);
+      const stochVal = last(stoch);
+      const stochBull = stochVal < 20;
+      const stochBear = stochVal > 80;
+      const stochAligned = stochBull || stochBear;
+      const stochDir = stochBull ? 'bull' : (stochBear ? 'bear' : null);
+
+      // ---- Indicator 6: Volume trend ----
+      const volAvg = volumeTrend(vols, 20);
+      const volAvgNow = last(volAvg);
+      const lastVol = vols[n-1];
+      const priceUp = price > prevClose;
+      const volSpike = lastVol > volAvgNow * 1.3;
+      const volBull = volSpike && priceUp;
+      const volBear = volSpike && !priceUp;
+      const volAligned = volSpike;
+      const volDir = volBull ? 'bull' : (volBear ? 'bear' : null);
+
+      // ---- Indicator 7: ADX trend strength + direction ----
+      const adxData = adx(highs, lows, closes, 14);
+      const adxVal = last(adxData.adx);
+      const pdi = last(adxData.plusDI);
+      const mdi = last(adxData.minusDI);
+      const adxStrong = adxVal > 20;
+      const adxBull = adxStrong && pdi > mdi;
+      const adxBear = adxStrong && mdi > pdi;
+      const adxAligned = adxStrong;
+      const adxDir = adxBull ? 'bull' : (adxBear ? 'bear' : null);
+
+      const indicators = [
+        {
+          key: 'rsi', title: 'RSI (14)', aligned: rsiAligned, dir: rsiDir,
+          detail: rsiVal!=null ? `${rsiVal.toFixed(1)} — ${rsiVal<35?'oversold':rsiVal>65?'overbought':'neutral zone'}` : '—',
+          value: rsiVal!=null ? rsiVal.toFixed(1) : '—'
+        },
+        {
+          key: 'macd', title: 'MACD Histogram', aligned: macdAligned, dir: macdDir,
+          detail: macdHistNow!=null ? `${macdHistNow>0?'above':'below'} zero, ${macdHistNow>macdHistPrev?'rising':'falling'}` : '—',
+          value: macdHistNow!=null ? macdHistNow.toFixed(2) : '—'
+        },
+        {
+          key: 'ema', title: 'EMA 9/21 Cross', aligned: emaAligned, dir: emaDir,
+          detail: emaCrossJustHappened ? `fresh ${emaDir==='bull'?'bullish':'bearish'} cross` : `9 ${emaBullTrend?'above':'below'} 21, trending`,
+          value: `${fmtPrice(e9now)}`
+        },
+        {
+          key: 'bb', title: 'Bollinger Bands (20,2)', aligned: bbAligned, dir: bbDir,
+          detail: bbAligned ? `price ${bbBull?'at/below lower band':'at/above upper band'}` : `mid-band, %B ${bbPctB.toFixed(0)}%`,
+          value: `${bbPctB.toFixed(0)}%B`
+        },
+        {
+          key: 'stoch', title: 'Stochastic RSI', aligned: stochAligned, dir: stochDir,
+          detail: stochVal!=null ? `${stochVal.toFixed(1)} — ${stochVal<20?'oversold':stochVal>80?'overbought':'mid-range'}` : '—',
+          value: stochVal!=null ? stochVal.toFixed(1) : '—'
+        },
+        {
+          key: 'vol', title: 'Volume Trend', aligned: volAligned, dir: volDir,
+          detail: volSpike ? `spike ${(lastVol/volAvgNow).toFixed(1)}x avg, price ${priceUp?'up':'down'}` : `normal, ${(lastVol/volAvgNow).toFixed(1)}x avg`,
+          value: `${(lastVol/volAvgNow).toFixed(1)}x`
+        },
+        {
+          key: 'adx', title: 'ADX Trend Strength', aligned: adxAligned, dir: adxDir,
+          detail: adxVal!=null ? `${adxVal.toFixed(1)} — ${adxStrong? (adxBull?'strong uptrend':'strong downtrend') : 'weak/no trend'}` : '—',
+          value: adxVal!=null ? adxVal.toFixed(1) : '—'
+        },
+      ];
+
+      let bullCount = 0, bearCount = 0, alignedCount = 0;
+      indicators.forEach(ind=>{
+        if(ind.aligned) alignedCount++;
+        if(ind.dir==='bull') bullCount++;
+        if(ind.dir==='bear') bearCount++;
+      });
+
+      let signal, signalClass;
+      const netDirCount = Math.max(bullCount, bearCount);
+      const confidence = Math.round((netDirCount/7)*100);
+
+      if(bullCount === bearCount || netDirCount < 2){
+        signal = 'NEUTRAL'; signalClass = 'neutral';
+      } else if(bullCount > bearCount){
+        signal = 'LONG'; signalClass = 'long';
+      } else {
+        signal = 'SHORT'; signalClass = 'short';
+      }
+
+      const finalConfidence = signalClass === 'neutral' ? Math.round((alignedCount/7)*100) : confidence;
+
+      render({
+        pair: wsName, tfLabel, price, prevClose, ticker,
+        signal, signalClass, confidence: finalConfidence,
+        bullCount, bearCount, alignedCount,
+        indicators
+      });
+
+      statusDot.classList.remove('off');
+      statusDot.style.background = 'var(--bull)';
+      statusDot.style.boxShadow = '0 0 6px var(--bull)';
+
+    } catch(err){
+      app.innerHTML = `<div class="error-box">SCAN FAILED — ${escapeHtml(err.message)}<br><br>Kraken's API may be rate-limiting or the pair/interval combo returned no data. Try again in a few seconds.</div>`;
+      statusDot.classList.add('off');
+      statusDot.style.background = '';
+      statusDot.style.boxShadow = '';
+    } finally {
+      scanBtn.disabled = false;
+      scanBtn.textContent = 'SCAN';
+    }
+  }
+
+  function escapeHtml(s){
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function render(data){
+    const chg = data.price - data.prevClose;
+    const chgPct = (chg/data.prevClose)*100;
+    const chgDir = chg >= 0 ? 'up' : 'down';
+    const chgSign = chg >= 0 ? '+' : '';
+
+    const signalNote = {
+      LONG: `${data.bullCount} of 7 indicators aligned bullish vs ${data.bearCount} bearish.`,
+      SHORT: `${data.bearCount} of 7 indicators aligned bearish vs ${data.bullCount} bullish.`,
+      NEUTRAL: `signals split ${data.bullCount} bull / ${data.bearCount} bear — no clear confluence right now.`
+    }[data.signal];
+
+    const rowsHtml = data.indicators.map(ind=>{
+      const mark = ind.aligned ? '✓' : '✗';
+      const markClass = ind.aligned ? 'yes' : 'no';
+      const tagHtml = ind.dir
+        ? `<span class="ind-tag ${ind.dir==='bull'?'bull':'bear'}">${ind.dir==='bull'?'BULL':'BEAR'}</span>`
+        : `<span class="ind-tag" style="color:var(--text-faint);border-color:var(--border)">FLAT</span>`;
+      return `
+        <div class="ind-row">
+          <div class="ind-mark ${markClass}">${mark}</div>
+          <div class="ind-body">
+            <div class="ind-title">${ind.title}</div>
+            <div class="ind-detail">${ind.detail}</div>
+          </div>
+          <div class="ind-value">${ind.value}</div>
+          ${tagHtml}
+        </div>`;
+    }).join('');
+
+    app.innerHTML = `
+      <div class="price-strip">
+        <div class="price-main">
+          <div class="price-value">$${fmtPrice(data.price)}</div>
+          <div class="price-pair">${data.pair} · ${data.tfLabel} CANDLES</div>
+        </div>
+        <div class="price-chg ${chgDir}">
+          <span class="pct">${chgSign}${chgPct.toFixed(2)}%</span>
+          <span class="lbl">vs prior candle</span>
+        </div>
+      </div>
+
+      <div class="signal-block ${data.signalClass}">
+        <div class="signal-row">
+          <div>
+            <div class="signal-name ${data.signalClass}">${data.signal}</div>
+          </div>
+          <div>
+            <div class="confidence-num">${data.confidence}%</div>
+            <div class="confidence-lbl">CONFIDENCE</div>
+          </div>
+        </div>
+        <div class="confidence-bar"><div class="confidence-bar-fill ${data.signalClass}" style="width:${data.confidence}%"></div></div>
+        <div class="signal-note">${signalNote}</div>
+      </div>
+
+      <div class="section-label"><span>INDICATOR</span><span>${data.alignedCount}/7 TRIGGERED</span></div>
+      <div class="indicators">${rowsHtml}</div>
+
+      <div class="stats-grid">
+        <div class="stat">
+          <div class="stat-lbl">24H HIGH</div>
+          <div class="stat-val">$${fmtPrice(parseFloat(data.ticker.h[1]))}</div>
+        </div>
+        <div class="stat">
+          <div class="stat-lbl">24H LOW</div>
+          <div class="stat-val">$${fmtPrice(parseFloat(data.ticker.l[1]))}</div>
+        </div>
+        <div class="stat">
+          <div class="stat-lbl">24H VOLUME</div>
+          <div class="stat-val">${parseFloat(data.ticker.v[1]).toLocaleString('en-US',{maximumFractionDigits:0})}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  scanBtn.addEventListener('click', runScan);
+})();
+</script>
+</body>
+</html>
