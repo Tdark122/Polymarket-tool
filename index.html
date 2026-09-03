@@ -297,23 +297,23 @@
   <div class="masthead">
     <div>
       <div class="masthead-title"><span class="dot off" id="statusDot"></span>SCANLINE</div>
-      <div class="masthead-sub">7-indicator confluence scanner · kraken public data</div>
+      <div class="masthead-sub">7-indicator confluence scanner · mexc public data</div>
     </div>
     <div class="masthead-sub" id="clock" style="text-align:right"></div>
   </div>
 
   <div class="controls">
     <select id="pairSelect">
-      <option value="XBTUSD" data-ws="XBT/USD">BTC / USD</option>
-      <option value="ETHUSD" data-ws="ETH/USD">ETH / USD</option>
-      <option value="SOLUSD" data-ws="SOL/USD">SOL / USD</option>
-      <option value="XRPUSD" data-ws="XRP/USD">XRP / USD</option>
-      <option value="ADAUSD" data-ws="ADA/USD">ADA / USD</option>
-      <option value="DOGEUSD" data-ws="DOGE/USD">DOGE / USD</option>
-      <option value="LTCUSD" data-ws="LTC/USD">LTC / USD</option>
-      <option value="LINKUSD" data-ws="LINK/USD">LINK / USD</option>
-      <option value="AVAXUSD" data-ws="AVAX/USD">AVAX / USD</option>
-      <option value="MATICUSD" data-ws="MATIC/USD">MATIC / USD</option>
+      <option value="BTC_USDT" data-ws="BTC/USDT">BTC / USDT</option>
+      <option value="ETH_USDT" data-ws="ETH/USDT">ETH / USDT</option>
+      <option value="SOL_USDT" data-ws="SOL/USDT">SOL / USDT</option>
+      <option value="XRP_USDT" data-ws="XRP/USDT">XRP / USDT</option>
+      <option value="ADA_USDT" data-ws="ADA/USDT">ADA / USDT</option>
+      <option value="DOGE_USDT" data-ws="DOGE/USDT">DOGE / USDT</option>
+      <option value="LTC_USDT" data-ws="LTC/USDT">LTC / USDT</option>
+      <option value="LINK_USDT" data-ws="LINK/USDT">LINK / USDT</option>
+      <option value="AVAX_USDT" data-ws="AVAX/USDT">AVAX / USDT</option>
+      <option value="MATIC_USDT" data-ws="MATIC/USDT">MATIC / USDT</option>
     </select>
     <select id="tfSelect">
       <option value="15">15m</option>
@@ -328,12 +328,12 @@
     <div class="empty">
       <div class="big">no scan run yet</div>
       pick a pair and timeframe, then hit scan.<br>
-      pulls live OHLC from kraken, runs 7 indicators, no login needed.
+      pulls live OHLC from mexc, runs 7 indicators, no login needed.
     </div>
   </div>
 
   <div class="disclaimer">
-    data via kraken public API. indicators computed client-side from OHLC candles — not financial advice, not a trading signal guarantee. futures/leveraged trading carries high risk of loss. do your own research.
+    data via mexc public API. indicators computed client-side from OHLC candles — not financial advice, not a trading signal guarantee. futures/leveraged trading carries high risk of loss. do your own research.
   </div>
 
 <script>
@@ -524,33 +524,34 @@
     return avg;
   }
 
-  // ---------- Kraken fetch with retry ----------
+  // ---------- MEXC fetch with retry ----------
   async function fetchOHLC(pair, interval){
-    const url = `https://api.kraken.com/0/public/OHLC?pair=${pair}&interval=${interval}`;
+    // MEXC API: pair format like BTC_USDT, interval in minutes (15, 60, 240, 1440)
+    const url = `https://api.mexc.com/api/v1/klines?symbol=${pair}&interval=${interval}m&limit=100`;
     const res = await fetchWithRetry(url, 3, 1500);
     const json = await res.json();
-    if(json.error && json.error.length) throw new Error(json.error.join('; '));
-    const key = Object.keys(json.result).find(k=>k!=='last');
-    const rows = json.result[key];
-    if(!rows || rows.length < 40) throw new Error('Not enough candle history returned');
-    return rows.map(r=>({
-      time: r[0]*1000,
+    if(!Array.isArray(json)) throw new Error('Invalid response from MEXC');
+    if(json.length < 40) throw new Error('Not enough candle history returned');
+    return json.map(r=>({
+      time: r[0],
       open: parseFloat(r[1]),
       high: parseFloat(r[2]),
       low: parseFloat(r[3]),
       close: parseFloat(r[4]),
-      vwap: parseFloat(r[5]),
-      volume: parseFloat(r[6]),
+      volume: parseFloat(r[5]),
     }));
   }
 
   async function fetchTicker(pair){
-    const url = `https://api.kraken.com/0/public/Ticker?pair=${pair}`;
+    const url = `https://api.mexc.com/api/v1/ticker/24hr?symbol=${pair}`;
     const res = await fetchWithRetry(url, 3, 1500);
     const json = await res.json();
-    if(json.error && json.error.length) throw new Error(json.error.join('; '));
-    const key = Object.keys(json.result)[0];
-    return json.result[key];
+    if(!json) throw new Error('Invalid ticker response from MEXC');
+    return {
+      h: [null, parseFloat(json.h)],
+      l: [null, parseFloat(json.l)],
+      v: [null, parseFloat(json.v)],
+    };
   }
 
   function fmtPrice(v){
@@ -743,10 +744,10 @@
       let retryHint = '';
       
       if(err.message.includes('rate_limit')){
-        errorMsg = 'Rate limit hit on Kraken API';
+        errorMsg = 'Rate limit hit on MEXC API';
         retryHint = '<strong>waiting 30+ seconds recommended before retry</strong>';
       } else if(err.message.includes('Failed to fetch')){
-        errorMsg = 'Network error — check connection or Kraken API status';
+        errorMsg = 'Network error — check connection or MEXC API status';
         retryHint = '<strong>try again in a few seconds</strong>';
       }
 
